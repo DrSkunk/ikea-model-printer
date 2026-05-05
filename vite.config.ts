@@ -10,11 +10,7 @@ export default defineConfig({
 			name: 'extract-node-modules-svelte-css',
 			enforce: 'pre',
 			async load(id) {
-				if (
-					id.includes('node_modules') &&
-					id.includes('.svelte') &&
-					id.includes('type=style')
-				) {
+				if (id.includes('node_modules') && id.includes('.svelte') && id.includes('type=style')) {
 					const { readFileSync } = await import('fs');
 					const filePath = id.split('?')[0];
 					const source = readFileSync(filePath, 'utf-8');

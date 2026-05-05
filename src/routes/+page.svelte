@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
-	import RangeSlider from 'svelte-range-slider-pips';
 	import type { ApiErrorShape, IkeaModelInfo, IkeaSearchProduct } from '$lib/types/ikea';
 
 	let query = $state('');
@@ -31,17 +29,12 @@
 		return (Math.log10(Math.max(1, scale)) / 3) * 100;
 	}
 
-	let sliderPos = $state([scaleToPo(scaleDenominator)]);
+	const sliderPos = $derived(scaleToPo(scaleDenominator));
 
-	$effect(() => {
-		const sd = scaleDenominator;
-		untrack(() => {
-			sliderPos = [scaleToPo(sd)];
-		});
-	});
-
-	function onSliderChange(e: CustomEvent<{ values: number[] }>): void {
-		scaleDenominator = clampScaleDenominator(posToScale(e.detail.values[0]));
+	function onSliderInput(e: Event): void {
+		scaleDenominator = clampScaleDenominator(
+			posToScale(Number((e.target as HTMLInputElement).value))
+		);
 	}
 
 	onMount(() => {
@@ -269,8 +262,7 @@
 
 			<!-- Scale control -->
 			<div
-				class="mt-3 rounded-xl border border-border bg-white px-3 pt-2.5 pb-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
-				style="--range-handle-focus:#0058a3;--range-handle:#4a8fd4;--range-range:#0058a3;--range-float:#0058a3;"
+				class="mt-3 rounded-xl border border-border bg-white px-3 pt-2.5 pb-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
 			>
 				<div class="mb-1 flex items-center justify-between gap-3">
 					<span class="text-xs font-medium text-ink-secondary">Print scale</span>
@@ -287,20 +279,22 @@
 						/>
 					</div>
 				</div>
-				<RangeSlider
-					min={0}
-					max={100}
-					step={0.1}
-					values={sliderPos}
-					pips={true}
-					first="label"
-					last="label"
-					rest={false}
-					float={true}
-					formatter={(v: number) => `1:${posToScale(v)}`}
-					handleFormatter={(v: number) => `1:${posToScale(v)}`}
-					on:change={onSliderChange}
+				<input
+					id="scale-slider"
+					type="range"
+					value={sliderPos}
+					oninput={onSliderInput}
+					min="0"
+					max="100"
+					step="0.5"
+					class="mt-2 h-2 w-full cursor-pointer accent-ikea-blue"
 				/>
+				<div class="mt-1.5 flex justify-between text-[0.6rem] text-ink-subtle">
+					<span>1:1</span>
+					<span>1:10</span>
+					<span>1:100</span>
+					<span>1:1000</span>
+				</div>
 			</div>
 		</div>
 	</header>
