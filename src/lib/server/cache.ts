@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const CACHE_DIR = path.resolve('.cache/ikea-model-printer');
+// Vercel's /var/task filesystem is read-only; /tmp is the only writable dir.
+// Locally, prefer .cache/ next to the project root for easy inspection.
+const CACHE_DIR =
+	process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
+		? '/tmp/ikea-model-printer'
+		: path.resolve('.cache/ikea-model-printer');
 const MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 
 function buildCacheKey(parts: string[]): string {
