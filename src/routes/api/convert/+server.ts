@@ -6,6 +6,9 @@ import type { RequestHandler } from './$types';
 
 const DEFAULT_COUNTRY = 'us';
 const DEFAULT_LANGUAGE = 'en';
+const DEFAULT_SCALE_DENOMINATOR = 20;
+const MIN_SCALE_DENOMINATOR = 1;
+const MAX_SCALE_DENOMINATOR = 1000;
 
 function normalizeLocale(value: string | null, fallback: string): string {
 	const lower = value?.toLowerCase() ?? fallback;
@@ -26,13 +29,28 @@ export const GET: RequestHandler = async ({ url }) => {
 	const country = normalizeLocale(url.searchParams.get('country'), DEFAULT_COUNTRY);
 	const language = normalizeLocale(url.searchParams.get('language'), DEFAULT_LANGUAGE);
 
-	const cacheKey = [country, language, itemNo, 'stl'];
+	const rawScaleDenominator = Number(url.searchParams.get('scaleDenominator'));
+	const denominatorFromPct = Number(url.searchParams.get('scalePct'));
+	const fallbackDenominator =
+		Number.isFinite(denominatorFromPct) && denominatorFromPct > 0
+			? 100 / denominatorFromPct
+			: DEFAULT_SCALE_DENOMINATOR;
+	const parsedScaleDenominator = Number.isFinite(rawScaleDenominator)
+		? rawScaleDenominator
+		: fallbackDenominator;
+	const scaleDenominator = Math.max(
+		MIN_SCALE_DENOMINATOR,
+		Math.min(MAX_SCALE_DENOMINATOR, parsedScaleDenominator)
+	);
+	const scale = 1000 / scaleDenominator;
+
+	const cacheKey = [country, language, itemNo, `scale-${scaleDenominator}`, 'stl'];
 	const cachedStl = await readCachedBinary(cacheKey, 'stl');
 	if (cachedStl) {
 		return new Response(Buffer.from(cachedStl), {
 			headers: {
 				'Content-Type': 'model/stl',
-				'Content-Disposition': `attachment; filename="ikea-${itemNo}.stl"`,
+				'Content-Disposition': `attachment; filename="ikea-${itemNo}-1-${scaleDenominator}.stl"`,
 				'Cache-Control': 'public, max-age=86400'
 			}
 		});
@@ -58,13 +76,13 @@ export const GET: RequestHandler = async ({ url }) => {
 			await writeCachedBinary(glbCacheKey, 'glb', glbBytes);
 		}
 
-		const stl = await convertGlbToStl(glbBytes);
+		const stl = await convertGlbToStl(glbBytes, scale);
 		await writeCachedBinary(cacheKey, 'stl', stl);
 
 		return new Response(Buffer.from(stl), {
 			headers: {
 				'Content-Type': 'model/stl',
-				'Content-Disposition': `attachment; filename="ikea-${itemNo}.stl"`,
+				'Content-Disposition': `attachment; filename="ikea-${itemNo}-1-${scaleDenominator}.stl"`,
 				'Cache-Control': 'public, max-age=86400'
 			}
 		});

@@ -7,7 +7,7 @@
 
 	/* Surfaces */
 	--color-surface: #ffffff;
-	--color-bg: #f5f5f5;
+	--color-bg: #ffffff;
 	--color-surface-hover: #f9f9f9;
 
 	/* Text */
@@ -39,7 +39,7 @@ html {
 body {
 	margin: 0;
 	min-height: 100vh;
-	background-color: var(--color-bg);
+	background-color: #ffffff;
 	color: var(--color-ink);
 }
 

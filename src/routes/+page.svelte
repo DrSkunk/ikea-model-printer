@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { ApiErrorShape, IkeaSearchProduct } from '$lib/types/ikea';
+	import { onMount } from 'svelte';
+	import type { ApiErrorShape, IkeaModelInfo, IkeaSearchProduct } from '$lib/types/ikea';
 
 	let query = $state('');
 	let country = $state('us');
@@ -8,13 +9,80 @@
 	let convertingItemNo = $state<string | null>(null);
 	let products = $state<IkeaSearchProduct[]>([]);
 	let errorMessage = $state('');
+	let scaleDenominator = $state(20);
+	let searchInput: HTMLInputElement | null = null;
+	let dimensionsByItemNo = $state<Record<string, IkeaModelInfo>>({});
+	const SCALE_STORAGE_KEY = 'ikea-scale-denominator';
 
 	const hasResults = $derived(products.length > 0);
+
+	function clampScaleDenominator(value: number): number {
+		if (!Number.isFinite(value)) return 20;
+		return Math.max(1, Math.min(1000, Math.round(value)));
+	}
+
+	onMount(() => {
+		const stored = Number(window.localStorage.getItem(SCALE_STORAGE_KEY));
+		scaleDenominator = clampScaleDenominator(stored);
+		searchInput?.focus();
+	});
+
+	$effect(() => {
+		const normalizedScale = clampScaleDenominator(Number(scaleDenominator));
+		if (normalizedScale !== scaleDenominator) {
+			scaleDenominator = normalizedScale;
+			return;
+		}
+
+		window.localStorage.setItem(SCALE_STORAGE_KEY, String(normalizedScale));
+	});
+
+	async function loadDimensions(items: IkeaSearchProduct[]): Promise<void> {
+		const localeCountry = country.trim().toLowerCase();
+		const localeLanguage = language.trim().toLowerCase();
+		const updates: Record<string, IkeaModelInfo> = {};
+
+		await Promise.all(
+			items.map(async (item) => {
+				try {
+					const params = new URLSearchParams({
+						itemNo: item.itemNo,
+						country: localeCountry,
+						language: localeLanguage
+					});
+					const response = await fetch(`/api/model-info?${params.toString()}`);
+					if (!response.ok) return;
+
+					const payload = (await response.json()) as
+						| { exists: true; info: IkeaModelInfo }
+						| { exists: false };
+					if (payload.exists) {
+						updates[item.itemNo] = payload.info;
+					}
+				} catch {
+					// Keep UI responsive even if some lookups fail.
+				}
+			})
+		);
+
+		dimensionsByItemNo = updates;
+	}
+
+	function formatMm(value: number | null): string {
+		if (value === null) return 'n/a';
+		return `${Math.round(value)} mm`;
+	}
+
+	function scaledMm(value: number | null): number | null {
+		if (value === null) return null;
+		return value / scaleDenominator;
+	}
 
 	async function searchProducts(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
 		errorMessage = '';
 		products = [];
+		dimensionsByItemNo = {};
 
 		if (!query.trim()) {
 			errorMessage = 'Type a product name or IKEA item number first.';
@@ -36,6 +104,7 @@
 
 			const payload = (await response.json()) as { products: IkeaSearchProduct[] };
 			products = payload.products;
+			void loadDimensions(payload.products);
 			if (payload.products.length === 0) {
 				errorMessage = 'No products found. Try a broader search or switch locale.';
 			}
@@ -51,10 +120,14 @@
 		convertingItemNo = itemNo;
 
 		try {
+			const clampedScaleDenominator = clampScaleDenominator(Number(scaleDenominator));
+			scaleDenominator = clampedScaleDenominator;
+
 			const params = new URLSearchParams({
 				itemNo,
 				country: country.trim().toLowerCase(),
-				language: language.trim().toLowerCase()
+				language: language.trim().toLowerCase(),
+				scaleDenominator: String(clampedScaleDenominator)
 			});
 			const response = await fetch(`/api/convert?${params.toString()}`);
 			if (!response.ok) {
@@ -66,7 +139,7 @@
 			const link = document.createElement('a');
 			const url = URL.createObjectURL(blob);
 			link.href = url;
-			link.download = `ikea-${itemNo.replace(/\D/g, '')}.stl`;
+			link.download = `ikea-${itemNo.replace(/\D/g, '')}-1-${clampedScaleDenominator}.stl`;
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -94,17 +167,18 @@
 <div class="flex min-h-screen flex-col bg-bg font-[var(--font-sans)]">
 	<!-- ─── Header ─── -->
 	<header class="border-b border-border bg-surface">
-		<div class="mx-auto flex h-14 max-w-[1400px] items-center px-4 sm:px-8">
+		<div class="mx-auto max-w-[1400px] px-4 py-4 sm:px-8">
 			<!-- Search bar -->
 			<form
 				onsubmit={searchProducts}
-				class="flex flex-1 items-center gap-0 overflow-hidden rounded-full border border-border-strong bg-bg focus-within:border-ikea-blue focus-within:ring-1 focus-within:ring-ikea-blue"
+				class="flex items-center gap-0 overflow-hidden rounded-full border border-border-strong bg-white shadow-[0_1px_2px_rgba(0,0,0,0.06)] focus-within:border-ikea-blue focus-within:ring-1 focus-within:ring-ikea-blue"
 			>
 				<input
 					id="search-query"
+					bind:this={searchInput}
 					bind:value={query}
 					placeholder="Search products – try BILLY, PAX, KALLAX…"
-					class="flex-1 bg-transparent px-5 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:outline-none"
+					class="flex-1 bg-transparent px-5 py-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none"
 				/>
 
 				<div class="flex items-center gap-0 pr-1">
@@ -115,7 +189,7 @@
 						minlength="2"
 						placeholder="us"
 						title="Country code"
-						class="w-10 bg-transparent py-2.5 text-center text-xs text-ink-muted uppercase focus:outline-none"
+						class="w-10 bg-transparent py-3 text-center text-xs text-ink-muted uppercase focus:outline-none"
 					/>
 					<span class="text-xs text-ink-subtle">/</span>
 					<!-- Language -->
@@ -125,14 +199,14 @@
 						minlength="2"
 						placeholder="en"
 						title="Language code"
-						class="w-10 bg-transparent py-2.5 text-center text-xs text-ink-muted uppercase focus:outline-none"
+						class="w-10 bg-transparent py-3 text-center text-xs text-ink-muted uppercase focus:outline-none"
 					/>
 
 					<!-- Search button -->
 					<button
 						type="submit"
 						disabled={loading}
-						class="mr-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-ink text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+						class="mr-1 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-ink text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
 						aria-label="Search"
 					>
 						{#if loading}
@@ -169,6 +243,38 @@
 					</button>
 				</div>
 			</form>
+
+			<!-- Scale control -->
+			<div
+				class="mt-3 rounded-xl border border-border bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+			>
+				<div class="flex items-center justify-between gap-3">
+					<label for="scale-slider" class="text-xs font-medium text-ink-secondary"
+						>Scale 1:{scaleDenominator}</label
+					>
+					<div class="flex items-center gap-1.5">
+						<span class="text-xs text-ink-muted">1 /</span>
+						<input
+							id="scale-denominator"
+							type="number"
+							bind:value={scaleDenominator}
+							min="1"
+							max="1000"
+							step="1"
+							class="w-[4.5rem] rounded border border-border-strong bg-white px-2 py-1 text-center text-xs text-ink focus:border-ikea-blue focus:outline-none"
+						/>
+					</div>
+				</div>
+				<input
+					id="scale-slider"
+					type="range"
+					bind:value={scaleDenominator}
+					min="1"
+					max="200"
+					step="1"
+					class="mt-2 h-2 w-full cursor-pointer accent-ikea-blue"
+				/>
+			</div>
 		</div>
 	</header>
 
@@ -207,6 +313,7 @@
 
 				<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
 					{#each products as product (product.itemNo)}
+						{@const dims = dimensionsByItemNo[product.itemNo]}
 						<article class="group flex flex-col bg-surface">
 							<!-- Image -->
 							<div
@@ -235,6 +342,18 @@
 								<p class="mt-1 text-[0.7rem] text-ink-muted" style="font-family: var(--font-mono)">
 									Art. no. {product.itemNo}
 								</p>
+								{#if dims && (dims.widthMm !== null || dims.depthMm !== null || dims.heightMm !== null)}
+									<p class="mt-1 text-[0.7rem] leading-relaxed text-ink-muted">
+										Real: {formatMm(dims.widthMm)} × {formatMm(dims.depthMm)} × {formatMm(
+											dims.heightMm
+										)}
+									</p>
+									<p class="text-[0.7rem] leading-relaxed text-ink-secondary">
+										Scaled (1:{scaleDenominator}): {formatMm(scaledMm(dims.widthMm))} × {formatMm(
+											scaledMm(dims.depthMm)
+										)} × {formatMm(scaledMm(dims.heightMm))}
+									</p>
+								{/if}
 
 								<div class="mt-3 flex flex-col gap-2">
 									<!-- Primary: Download STL -->

@@ -174,7 +174,12 @@ function composeMatrix(node: GLTFNode): Mat4 {
 	];
 }
 
-function collectTriangles(node: GLTFNode, parentWorld: Mat4, triangles: Vec3[][]): void {
+function collectTriangles(
+	node: GLTFNode,
+	parentWorld: Mat4,
+	triangles: Vec3[][],
+	scale: number
+): void {
 	const localMatrix = composeMatrix(node);
 	const world = mulMat4(parentWorld, localMatrix);
 
@@ -219,16 +224,16 @@ function collectTriangles(node: GLTFNode, parentWorld: Mat4, triangles: Vec3[][]
 				]);
 
 				triangles.push([
-					[a[0] * MM_PER_METER, a[1] * MM_PER_METER, a[2] * MM_PER_METER],
-					[b[0] * MM_PER_METER, b[1] * MM_PER_METER, b[2] * MM_PER_METER],
-					[c[0] * MM_PER_METER, c[1] * MM_PER_METER, c[2] * MM_PER_METER]
+					[a[0] * scale, a[1] * scale, a[2] * scale],
+					[b[0] * scale, b[1] * scale, b[2] * scale],
+					[c[0] * scale, c[1] * scale, c[2] * scale]
 				]);
 			}
 		}
 	}
 
 	for (const child of node.listChildren()) {
-		collectTriangles(child, world, triangles);
+		collectTriangles(child, world, triangles, scale);
 	}
 }
 
@@ -262,7 +267,10 @@ async function buildIo(): Promise<NodeIO> {
 	return io;
 }
 
-export async function convertGlbToStl(glbBytes: Uint8Array): Promise<Uint8Array> {
+export async function convertGlbToStl(
+	glbBytes: Uint8Array,
+	scale = MM_PER_METER
+): Promise<Uint8Array> {
 	const io = await buildIo();
 	const document = await io.readBinary(glbBytes);
 
@@ -274,7 +282,7 @@ export async function convertGlbToStl(glbBytes: Uint8Array): Promise<Uint8Array>
 	const triangles: Vec3[][] = [];
 	for (const scene of document.getRoot().listScenes()) {
 		for (const node of scene.listChildren()) {
-			collectTriangles(node, identityMatrix(), triangles);
+			collectTriangles(node, identityMatrix(), triangles, scale);
 		}
 	}
 
