@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
+	import RangeSlider from 'svelte-range-slider-pips';
 	import type { ApiErrorShape, IkeaModelInfo, IkeaSearchProduct } from '$lib/types/ikea';
 
 	let query = $state('');
@@ -19,6 +21,27 @@
 	function clampScaleDenominator(value: number): number {
 		if (!Number.isFinite(value)) return 20;
 		return Math.max(1, Math.min(1000, Math.round(value)));
+	}
+
+	// Log-scale helpers: slider position 0–100 ↔ denominator 1–1000
+	function posToScale(pos: number): number {
+		return Math.round(Math.pow(1000, pos / 100));
+	}
+	function scaleToPo(scale: number): number {
+		return (Math.log10(Math.max(1, scale)) / 3) * 100;
+	}
+
+	let sliderPos = $state([scaleToPo(scaleDenominator)]);
+
+	$effect(() => {
+		const sd = scaleDenominator;
+		untrack(() => {
+			sliderPos = [scaleToPo(sd)];
+		});
+	});
+
+	function onSliderChange(e: CustomEvent<{ values: number[] }>): void {
+		scaleDenominator = clampScaleDenominator(posToScale(e.detail.values[0]));
 	}
 
 	onMount(() => {
@@ -246,12 +269,11 @@
 
 			<!-- Scale control -->
 			<div
-				class="mt-3 rounded-xl border border-border bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+				class="mt-3 rounded-xl border border-border bg-white px-3 pt-2.5 pb-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+				style="--range-handle-focus:#0058a3;--range-handle:#4a8fd4;--range-range:#0058a3;--range-float:#0058a3;"
 			>
-				<div class="flex items-center justify-between gap-3">
-					<label for="scale-slider" class="text-xs font-medium text-ink-secondary"
-						>Scale 1:{scaleDenominator}</label
-					>
+				<div class="mb-1 flex items-center justify-between gap-3">
+					<span class="text-xs font-medium text-ink-secondary">Print scale</span>
 					<div class="flex items-center gap-1.5">
 						<span class="text-xs text-ink-muted">1 /</span>
 						<input
@@ -265,14 +287,19 @@
 						/>
 					</div>
 				</div>
-				<input
-					id="scale-slider"
-					type="range"
-					bind:value={scaleDenominator}
-					min="1"
-					max="200"
-					step="1"
-					class="mt-2 h-2 w-full cursor-pointer accent-ikea-blue"
+				<RangeSlider
+					min={0}
+					max={100}
+					step={0.1}
+					values={sliderPos}
+					pips={true}
+					first="label"
+					last="label"
+					rest={false}
+					float={true}
+					formatter={(v: number) => `1:${posToScale(v)}`}
+					handleFormatter={(v: number) => `1:${posToScale(v)}`}
+					on:change={onSliderChange}
 				/>
 			</div>
 		</div>

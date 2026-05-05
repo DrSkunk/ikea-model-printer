@@ -16,7 +16,8 @@
 	"dependencies": {
 		"@gltf-transform/core": "^4.2.1",
 		"@gltf-transform/extensions": "^4.2.1",
-		"draco3dgltf": "^1.5.7"
+		"draco3dgltf": "^1.5.7",
+		"svelte-range-slider-pips": "^4.1.1"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.4",
