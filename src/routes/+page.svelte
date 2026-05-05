@@ -164,7 +164,7 @@
 	/>
 </svelte:head>
 
-<div class="flex min-h-screen flex-col bg-bg font-[var(--font-sans)]">
+<div class="flex min-h-screen flex-col bg-bg font-(--font-sans)">
 	<!-- ─── Header ─── -->
 	<header class="border-b border-border bg-surface">
 		<div class="mx-auto max-w-[1400px] px-4 py-4 sm:px-8">
@@ -261,7 +261,7 @@
 							min="1"
 							max="1000"
 							step="1"
-							class="w-[4.5rem] rounded border border-border-strong bg-white px-2 py-1 text-center text-xs text-ink focus:border-ikea-blue focus:outline-none"
+							class="w-18 rounded border border-border-strong bg-white px-2 py-1 text-center text-xs text-ink focus:border-ikea-blue focus:outline-none"
 						/>
 					</div>
 				</div>
