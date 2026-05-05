@@ -12,6 +12,7 @@
 	let scaleDenominator = $state(20);
 	let searchInput: HTMLInputElement | null = null;
 	let dimensionsByItemNo = $state<Record<string, IkeaModelInfo>>({});
+	let loadingDimensions = $state(false);
 	const SCALE_STORAGE_KEY = 'ikea-scale-denominator';
 
 	const hasResults = $derived(products.length > 0);
@@ -54,6 +55,7 @@
 	});
 
 	async function loadDimensions(items: IkeaSearchProduct[]): Promise<void> {
+		loadingDimensions = true;
 		const localeCountry = country.trim().toLowerCase();
 		const localeLanguage = language.trim().toLowerCase();
 		const updates: Record<string, IkeaModelInfo> = {};
@@ -82,6 +84,7 @@
 		);
 
 		dimensionsByItemNo = updates;
+		loadingDimensions = false;
 	}
 
 	function formatMm(value: number | null): string {
@@ -99,6 +102,7 @@
 		errorMessage = '';
 		products = [];
 		dimensionsByItemNo = {};
+		loadingDimensions = false;
 
 		if (!query.trim()) {
 			errorMessage = 'Type a product name or IKEA item number first.';
@@ -326,7 +330,19 @@
 		{/if}
 
 		<!-- Results -->
-		{#if hasResults}
+		{#if loading}
+			<div class="flex items-center justify-center py-24">
+				<svg class="h-8 w-8 animate-spin text-ikea-blue" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"
+					></circle>
+					<path
+						class="opacity-80"
+						fill="currentColor"
+						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+					></path>
+				</svg>
+			</div>
+		{:else if hasResults}
 			<div class="animate-rise-3">
 				<p class="mb-4 text-sm text-ink-muted">
 					{products.length} result{products.length === 1 ? '' : 's'}
@@ -374,6 +390,29 @@
 											scaledMm(dims.depthMm)
 										)} × {formatMm(scaledMm(dims.heightMm))}
 									</p>
+								{:else if loadingDimensions}
+									<div class="mt-1.5 flex items-center gap-1.5">
+										<svg
+											class="h-3 w-3 animate-spin text-ink-subtle"
+											fill="none"
+											viewBox="0 0 24 24"
+										>
+											<circle
+												class="opacity-30"
+												cx="12"
+												cy="12"
+												r="10"
+												stroke="currentColor"
+												stroke-width="4"
+											></circle>
+											<path
+												class="opacity-70"
+												fill="currentColor"
+												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+											></path>
+										</svg>
+										<span class="text-[0.65rem] text-ink-subtle">Loading dimensions…</span>
+									</div>
 								{/if}
 
 								<div class="mt-3 flex flex-col gap-2">
