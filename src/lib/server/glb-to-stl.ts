@@ -392,13 +392,37 @@ function hasUnsupportedRequiredExtension(document: Document): string | null {
 	return null;
 }
 
+const GLB_MAGIC = 0x46546c67; // "glTF"
+const GLB_JSON_CHUNK_TYPE = 0x4e4f534a; // "JSON"
+
+function getGlbExtensionsRequired(glbBytes: Uint8Array): string[] {
+	if (glbBytes.byteLength < 20) return [];
+	const view = new DataView(glbBytes.buffer, glbBytes.byteOffset, glbBytes.byteLength);
+	if (view.getUint32(0, true) !== GLB_MAGIC) return [];
+	const chunkLength = view.getUint32(12, true);
+	const chunkType = view.getUint32(16, true);
+	if (chunkType !== GLB_JSON_CHUNK_TYPE || glbBytes.byteLength < 20 + chunkLength) return [];
+	try {
+		const json = JSON.parse(
+			new TextDecoder().decode(glbBytes.slice(20, 20 + chunkLength))
+		) as Record<string, unknown>;
+		const required = json.extensionsRequired;
+		if (Array.isArray(required)) {
+			return required.filter((x): x is string => typeof x === 'string');
+		}
+	} catch {
+		// ignore parse errors
+	}
+	return [];
+}
+
 async function buildIo(): Promise<NodeIO> {
-	const io = new NodeIO().registerExtensions([
-		KHRDracoMeshCompression,
-		EXTTextureWebP,
-		KHRTextureBasisu
-	]);
 	const decoderModule = await decoderModulePromise;
+	const io = new NodeIO().registerExtensions(
+		decoderModule
+			? [KHRDracoMeshCompression, EXTTextureWebP, KHRTextureBasisu]
+			: [EXTTextureWebP, KHRTextureBasisu]
+	);
 	if (decoderModule) {
 		io.registerDependencies({
 			'draco3d.decoder': decoderModule
@@ -413,6 +437,16 @@ export async function convertGlbToStl(
 	options: ConvertOptions = {}
 ): Promise<Uint8Array> {
 	const { optimize = false } = options;
+
+	const decoderModule = await decoderModulePromise;
+	if (!decoderModule) {
+		const requiredExts = getGlbExtensionsRequired(glbBytes);
+		if (requiredExts.includes('KHR_draco_mesh_compression')) {
+			throw new Error(
+				'This model uses Draco mesh compression, but the Draco decoder is unavailable in this environment.'
+			);
+		}
+	}
 
 	const io = await buildIo();
 	const document = await io.readBinary(glbBytes);
