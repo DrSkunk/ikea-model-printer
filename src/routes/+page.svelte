@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import ModelPreview from '$lib/components/ModelPreview.svelte';
 	import type { ApiErrorShape, IkeaModelInfo, IkeaSearchProduct } from '$lib/types/ikea';
 
 	let query = $state('');
@@ -7,6 +8,7 @@
 	let language = $state('en');
 	let loading = $state(false);
 	let convertingItemNo = $state<string | null>(null);
+	let previewItemNo = $state<string | null>(null);
 	let products = $state<IkeaSearchProduct[]>([]);
 	let errorMessage = $state('');
 	let scaleDenominator = $state(20);
@@ -462,11 +464,38 @@
 										{/if}
 									</button>
 
-									<!-- Secondary: View on IKEA -->
+									<!-- Secondary: Preview 3D -->
+									<button
+										type="button"
+										onclick={() => (previewItemNo = product.itemNo)}
+										class="flex w-full cursor-pointer items-center justify-center gap-2 rounded border border-border-strong px-3 py-2 text-xs font-medium text-ink-secondary transition-colors hover:border-ikea-blue hover:text-ikea-blue"
+									>
+										<svg
+											class="h-3.5 w-3.5 shrink-0"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+											/>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+											/>
+										</svg>
+										Preview 3D
+									</button>
+
+									<!-- Tertiary: View on IKEA -->
 									<button
 										type="button"
 										onclick={() => openProductPage(product.pipUrl)}
-										class="w-full cursor-pointer rounded border border-border-strong px-3 py-2 text-xs font-medium text-ink-secondary transition-colors hover:border-ikea-blue hover:text-ikea-blue"
+										class="w-full cursor-pointer rounded border border-border px-3 py-2 text-xs font-medium text-ink-muted transition-colors hover:border-ikea-blue hover:text-ikea-blue"
 									>
 										View on IKEA.com
 									</button>
@@ -489,3 +518,13 @@
 		</div>
 	</footer>
 </div>
+
+{#if previewItemNo}
+	<ModelPreview
+		itemNo={previewItemNo}
+		{country}
+		{language}
+		{scaleDenominator}
+		onClose={() => (previewItemNo = null)}
+	/>
+{/if}

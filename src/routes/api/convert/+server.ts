@@ -44,7 +44,17 @@ export const GET: RequestHandler = async ({ url }) => {
 	);
 	const scale = 1000 / scaleDenominator;
 
-	const cacheKey = [country, language, itemNo, `scale-${scaleDenominator}`, 'stl'];
+	const rawOptimize = url.searchParams.get('optimize');
+	const optimize = rawOptimize === null ? true : rawOptimize !== 'false';
+
+	const cacheKey = [
+		country,
+		language,
+		itemNo,
+		`scale-${scaleDenominator}`,
+		optimize ? 'opt' : 'raw',
+		'stl'
+	];
 	const cachedStl = await readCachedBinary(cacheKey, 'stl');
 	if (cachedStl) {
 		return new Response(Buffer.from(cachedStl), {
@@ -76,7 +86,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			await writeCachedBinary(glbCacheKey, 'glb', glbBytes);
 		}
 
-		const stl = await convertGlbToStl(glbBytes, scale);
+		const stl = await convertGlbToStl(glbBytes, scale, { optimize });
 		await writeCachedBinary(cacheKey, 'stl', stl);
 
 		return new Response(Buffer.from(stl), {
