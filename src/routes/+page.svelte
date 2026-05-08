@@ -7,7 +7,8 @@
 	let country = $state('us');
 	let language = $state('en');
 	let loading = $state(false);
-	let convertingItemNo = $state<string | null>(null);
+	/** `${itemNo}-opt` or `${itemNo}-raw` while that variant is downloading. */
+	let convertingKey = $state<string | null>(null);
 	let previewItemNo = $state<string | null>(null);
 	let products = $state<IkeaSearchProduct[]>([]);
 	let errorMessage = $state('');
@@ -137,9 +138,10 @@
 		}
 	}
 
-	async function downloadStl(itemNo: string): Promise<void> {
+	async function downloadStl(itemNo: string, optimize: boolean): Promise<void> {
 		errorMessage = '';
-		convertingItemNo = itemNo;
+		const key = `${itemNo}-${optimize ? 'opt' : 'raw'}`;
+		convertingKey = key;
 
 		try {
 			const clampedScaleDenominator = clampScaleDenominator(Number(scaleDenominator));
@@ -149,7 +151,8 @@
 				itemNo,
 				country: country.trim().toLowerCase(),
 				language: language.trim().toLowerCase(),
-				scaleDenominator: String(clampedScaleDenominator)
+				scaleDenominator: String(clampedScaleDenominator),
+				optimize: String(optimize)
 			});
 			const response = await fetch(`/api/convert?${params.toString()}`);
 			if (!response.ok) {
@@ -159,17 +162,18 @@
 
 			const blob = await response.blob();
 			const link = document.createElement('a');
-			const url = URL.createObjectURL(blob);
-			link.href = url;
-			link.download = `ikea-${itemNo.replace(/\D/g, '')}-1-${clampedScaleDenominator}.stl`;
+			const objectUrl = URL.createObjectURL(blob);
+			link.href = objectUrl;
+			const suffix = optimize ? '-opt' : '-raw';
+			link.download = `ikea-${itemNo.replace(/\D/g, '')}-1-${clampedScaleDenominator}${suffix}.stl`;
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
-			URL.revokeObjectURL(url);
+			URL.revokeObjectURL(objectUrl);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Conversion failed';
 		} finally {
-			convertingItemNo = null;
+			convertingKey = null;
 		}
 	}
 
@@ -418,53 +422,102 @@
 								{/if}
 
 								<div class="mt-3 flex flex-col gap-2">
-									<!-- Primary: Download STL -->
-									<button
-										type="button"
-										onclick={() => downloadStl(product.itemNo)}
-										disabled={convertingItemNo === product.itemNo || convertingItemNo !== null}
-										class="flex w-full cursor-pointer items-center justify-center gap-2 rounded bg-ink px-3 py-2.5 text-xs font-bold text-white transition-colors hover:bg-ink-secondary disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										{#if convertingItemNo === product.itemNo}
-											<svg
-												class="h-3.5 w-3.5 shrink-0 animate-spin"
-												fill="none"
-												viewBox="0 0 24 24"
-											>
-												<circle
-													class="opacity-25"
-													cx="12"
-													cy="12"
-													r="10"
+									<!-- Download row: Optimised + Original side-by-side -->
+									<div class="flex gap-2">
+										<!-- Primary: Download Optimised -->
+										<button
+											type="button"
+											onclick={() => downloadStl(product.itemNo, true)}
+											disabled={convertingKey !== null}
+											class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded bg-ink px-3 py-2.5 text-xs font-bold text-white transition-colors hover:bg-ink-secondary disabled:cursor-not-allowed disabled:opacity-50"
+											title="Download print-ready STL (auto-oriented, floor at Z=0)"
+										>
+											{#if convertingKey === `${product.itemNo}-opt`}
+												<svg
+													class="h-3.5 w-3.5 shrink-0 animate-spin"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													></circle>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+													></path>
+												</svg>
+											{:else}
+												<svg
+													class="h-3.5 w-3.5 shrink-0"
+													fill="none"
 													stroke="currentColor"
-													stroke-width="4"
-												></circle>
-												<path
-													class="opacity-75"
-													fill="currentColor"
-													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-												></path>
-											</svg>
-											Converting…
-										{:else}
-											<svg
-												class="h-3.5 w-3.5 shrink-0"
-												fill="none"
-												stroke="currentColor"
-												viewBox="0 0 24 24"
-												stroke-width="2.5"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-												/>
-											</svg>
-											Download STL
-										{/if}
-									</button>
+													viewBox="0 0 24 24"
+													stroke-width="2.5"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+													/>
+												</svg>
+											{/if}
+											{convertingKey === `${product.itemNo}-opt` ? 'Converting…' : 'Optimised'}
+										</button>
 
-									<!-- Secondary: Preview 3D -->
+										<!-- Secondary: Download Original -->
+										<button
+											type="button"
+											onclick={() => downloadStl(product.itemNo, false)}
+											disabled={convertingKey !== null}
+											class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded border border-border-strong px-3 py-2.5 text-xs font-medium text-ink-secondary transition-colors hover:border-ikea-blue hover:text-ikea-blue disabled:cursor-not-allowed disabled:opacity-50"
+											title="Download original GLB → STL, no adjustments"
+										>
+											{#if convertingKey === `${product.itemNo}-raw`}
+												<svg
+													class="h-3.5 w-3.5 shrink-0 animate-spin"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													></circle>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+													></path>
+												</svg>
+											{:else}
+												<svg
+													class="h-3.5 w-3.5 shrink-0"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24"
+													stroke-width="2"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+													/>
+												</svg>
+											{/if}
+											{convertingKey === `${product.itemNo}-raw` ? 'Converting…' : 'Original'}
+										</button>
+									</div>
+
+									<!-- Preview 3D -->
 									<button
 										type="button"
 										onclick={() => (previewItemNo = product.itemNo)}
@@ -491,7 +544,7 @@
 										Preview 3D
 									</button>
 
-									<!-- Tertiary: View on IKEA -->
+									<!-- View on IKEA -->
 									<button
 										type="button"
 										onclick={() => openProductPage(product.pipUrl)}

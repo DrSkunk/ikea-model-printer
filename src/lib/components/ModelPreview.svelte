@@ -21,6 +21,8 @@
 	let optimizedLoading = $state(true);
 	let originalError = $state('');
 	let optimizedError = $state('');
+	let downloadingOriginal = $state(false);
+	let downloadingOptimized = $state(false);
 
 	const cleanupFns: Array<() => void> = [];
 
@@ -193,6 +195,41 @@
 		};
 	}
 
+	async function downloadStl(optimize: boolean): Promise<void> {
+		const setLoading = optimize
+			? (v: boolean) => (downloadingOptimized = v)
+			: (v: boolean) => (downloadingOriginal = v);
+
+		setLoading(true);
+		try {
+			const response = await fetch(makeStlUrl(optimize));
+			if (!response.ok) {
+				let msg = `HTTP ${response.status}`;
+				try {
+					const payload = (await response.json()) as { details?: string; error?: string };
+					msg = payload.details ?? payload.error ?? msg;
+				} catch {
+					/* ignore */
+				}
+				throw new Error(msg);
+			}
+			const blob = await response.blob();
+			const link = document.createElement('a');
+			const objectUrl = URL.createObjectURL(blob);
+			link.href = objectUrl;
+			const suffix = optimize ? '-opt' : '-raw';
+			link.download = `ikea-${itemNo.replace(/\D/g, '')}-1-${scaleDenominator}${suffix}.stl`;
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			URL.revokeObjectURL(objectUrl);
+		} catch {
+			// Silently ignore – user can retry
+		} finally {
+			setLoading(false);
+		}
+	}
+
 	onMount(async () => {
 		const tasks: Array<Promise<() => void>> = [];
 
@@ -272,9 +309,51 @@
 		<div class="grid min-h-0 flex-1 grid-cols-1 gap-px bg-border sm:grid-cols-2">
 			<!-- Original -->
 			<div class="flex flex-col bg-white">
-				<div class="shrink-0 border-b border-border px-4 py-2">
-					<p class="text-xs font-semibold text-ink">Original</p>
-					<p class="text-[0.65rem] text-ink-muted">Direct GLB → STL, no adjustments</p>
+				<div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
+					<div>
+						<p class="text-xs font-semibold text-ink">Original</p>
+						<p class="text-[0.65rem] text-ink-muted">Direct GLB → STL, no adjustments</p>
+					</div>
+					<button
+						type="button"
+						onclick={() => downloadStl(false)}
+						disabled={downloadingOriginal}
+						class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded border border-border-strong px-2.5 py-1.5 text-[0.65rem] font-medium text-ink-secondary transition-colors hover:border-ikea-blue hover:text-ikea-blue disabled:cursor-not-allowed disabled:opacity-50"
+						title="Download original STL"
+					>
+						{#if downloadingOriginal}
+							<svg class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+								></path>
+							</svg>
+						{:else}
+							<svg
+								class="h-3 w-3 shrink-0"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+								stroke-width="2"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+								/>
+							</svg>
+						{/if}
+						Download
+					</button>
 				</div>
 				<div bind:this={originalWrap} class="relative h-[340px] sm:h-[400px]">
 					{#if originalLoading}
@@ -312,11 +391,53 @@
 
 			<!-- Optimised -->
 			<div class="flex flex-col bg-white">
-				<div class="shrink-0 border-b border-border px-4 py-2">
-					<p class="text-xs font-semibold text-ikea-blue">Optimised for printing</p>
-					<p class="text-[0.65rem] text-ink-muted">
-						Auto-oriented · floor at Z = 0 · degenerates removed
-					</p>
+				<div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
+					<div>
+						<p class="text-xs font-semibold text-ikea-blue">Optimised for printing</p>
+						<p class="text-[0.65rem] text-ink-muted">
+							Auto-oriented · floor at Z = 0 · degenerates removed
+						</p>
+					</div>
+					<button
+						type="button"
+						onclick={() => downloadStl(true)}
+						disabled={downloadingOptimized}
+						class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded bg-ikea-blue px-2.5 py-1.5 text-[0.65rem] font-medium text-white transition-colors hover:bg-[#004f93] disabled:cursor-not-allowed disabled:opacity-50"
+						title="Download optimised STL"
+					>
+						{#if downloadingOptimized}
+							<svg class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+								></path>
+							</svg>
+						{:else}
+							<svg
+								class="h-3 w-3 shrink-0"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+								stroke-width="2"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+								/>
+							</svg>
+						{/if}
+						Download
+					</button>
 				</div>
 				<div bind:this={optimizedWrap} class="relative h-[340px] sm:h-[400px]">
 					{#if optimizedLoading}
