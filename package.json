@@ -16,7 +16,8 @@
 	"dependencies": {
 		"@gltf-transform/core": "^4.2.1",
 		"@gltf-transform/extensions": "^4.2.1",
-		"draco3dgltf": "^1.5.7"
+		"draco3dgltf": "^1.5.7",
+		"three": "^0.184.0"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.4",
@@ -26,6 +27,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@tailwindcss/vite": "^4.2.4",
 		"@types/node": "^22",
+		"@types/three": "^0.184.0",
 		"eslint": "^10.2.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.17.0",

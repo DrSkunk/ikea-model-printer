@@ -73,6 +73,146 @@ function normalize(v: Vec3): Vec3 {
 	return [v[0] / len, v[1] / len, v[2] / len];
 }
 
+function dot(a: Vec3, b: Vec3): number {
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function triangleArea(a: Vec3, b: Vec3, c: Vec3): number {
+	const n = cross(sub(b, a), sub(c, a));
+	return Math.hypot(n[0], n[1], n[2]) * 0.5;
+}
+
+/**
+ * Build a column-major 4×4 rotation matrix that rotates unit vector `from` to unit vector `to`.
+ * Compatible with the existing transformPoint() convention.
+ */
+function buildRotationMatrix(from: Vec3, to: Vec3): Mat4 {
+	const d = dot(from, to);
+	if (d > 1 - 1e-6) return identityMatrix();
+
+	let axis: Vec3;
+	let cosA: number;
+	let sinA: number;
+
+	if (d < -1 + 1e-6) {
+		// Anti-parallel: pick any perpendicular axis for 180° rotation
+		axis =
+			Math.abs(from[0]) < 0.9
+				? normalize(cross(from, [1, 0, 0]))
+				: normalize(cross(from, [0, 1, 0]));
+		cosA = -1;
+		sinA = 0;
+	} else {
+		axis = normalize(cross(from, to));
+		cosA = d;
+		sinA = Math.sqrt(1 - cosA * cosA);
+	}
+
+	const [kx, ky, kz] = axis;
+	const t = 1 - cosA;
+
+	// Column-major Rodrigues rotation matrix
+	return [
+		cosA + t * kx * kx,
+		t * kx * ky + sinA * kz,
+		t * kx * kz - sinA * ky,
+		0,
+		t * kx * ky - sinA * kz,
+		cosA + t * ky * ky,
+		t * ky * kz + sinA * kx,
+		0,
+		t * kx * kz + sinA * ky,
+		t * ky * kz - sinA * kx,
+		cosA + t * kz * kz,
+		0,
+		0,
+		0,
+		0,
+		1
+	];
+}
+
+/** Remove triangles with near-zero area (degenerate faces). */
+function removeDegenerates(triangles: Vec3[][]): Vec3[][] {
+	return triangles.filter(([a, b, c]) => {
+		const n = cross(sub(b, a), sub(c, a));
+		return Math.hypot(n[0], n[1], n[2]) > 1e-10;
+	});
+}
+
+/** Translate the entire model so its lowest Z vertex sits at Z = 0. */
+function translateToFloor(triangles: Vec3[][]): Vec3[][] {
+	let minZ = Infinity;
+	for (const [a, b, c] of triangles) {
+		if (a[2] < minZ) minZ = a[2];
+		if (b[2] < minZ) minZ = b[2];
+		if (c[2] < minZ) minZ = c[2];
+	}
+	if (!Number.isFinite(minZ) || Math.abs(minZ) < 1e-6) return triangles;
+	return triangles.map(([a, b, c]) => [
+		[a[0], a[1], a[2] - minZ],
+		[b[0], b[1], b[2] - minZ],
+		[c[0], c[1], c[2] - minZ]
+	]);
+}
+
+const CANDIDATE_NORMALS: Vec3[] = [
+	[1, 0, 0],
+	[-1, 0, 0],
+	[0, 1, 0],
+	[0, -1, 0],
+	[0, 0, 1],
+	[0, 0, -1]
+];
+
+/**
+ * Rotate the model so its largest flat face rests on the print bed (Z = 0 plane).
+ * Finds the dominant surface normal by area-weighted clustering into 6 axis directions,
+ * then rotates that normal to point toward −Z (into the bed).
+ */
+function autoOrient(triangles: Vec3[][]): Vec3[][] {
+	const scores = new Array<number>(CANDIDATE_NORMALS.length).fill(0);
+
+	for (const [a, b, c] of triangles) {
+		const n = normalize(cross(sub(b, a), sub(c, a)));
+		const area = triangleArea(a, b, c);
+
+		let bestIdx = 0;
+		let bestDot = -Infinity;
+		for (let i = 0; i < CANDIDATE_NORMALS.length; i++) {
+			const d = dot(n, CANDIDATE_NORMALS[i]);
+			if (d > bestDot) {
+				bestDot = d;
+				bestIdx = i;
+			}
+		}
+		scores[bestIdx] += area;
+	}
+
+	let dominantIdx = 0;
+	for (let i = 1; i < CANDIDATE_NORMALS.length; i++) {
+		if (scores[i] > scores[dominantIdx]) dominantIdx = i;
+	}
+
+	const dominantNormal = CANDIDATE_NORMALS[dominantIdx];
+	const targetDown: Vec3 = [0, 0, -1];
+
+	// Already facing into the bed — nothing to do
+	if (dot(dominantNormal, targetDown) > 0.9999) return triangles;
+
+	const rot = buildRotationMatrix(dominantNormal, targetDown);
+	return triangles.map(([a, b, c]) => [
+		transformPoint(rot, a),
+		transformPoint(rot, b),
+		transformPoint(rot, c)
+	]);
+}
+
+export interface ConvertOptions {
+	/** When true, apply Z-floor translation, degenerate removal, and auto-orientation. */
+	optimize?: boolean;
+}
+
 function expandIndices(indices: number[], mode: number): number[] {
 	if (mode === MODE_TRIANGLES) return indices;
 	const out: number[] = [];
@@ -293,8 +433,11 @@ async function buildIo(): Promise<NodeIO> {
 
 export async function convertGlbToStl(
 	glbBytes: Uint8Array,
-	scale = MM_PER_METER
+	scale = MM_PER_METER,
+	options: ConvertOptions = {}
 ): Promise<Uint8Array> {
+	const { optimize = false } = options;
+
 	const decoderModule = await decoderModulePromise;
 	if (!decoderModule) {
 		const requiredExts = getGlbExtensionsRequired(glbBytes);
@@ -313,7 +456,7 @@ export async function convertGlbToStl(
 		throw new Error(unsupported);
 	}
 
-	const triangles: Vec3[][] = [];
+	let triangles: Vec3[][] = [];
 	for (const scene of document.getRoot().listScenes()) {
 		for (const node of scene.listChildren()) {
 			collectTriangles(node, identityMatrix(), triangles, scale);
@@ -322,6 +465,12 @@ export async function convertGlbToStl(
 
 	if (triangles.length === 0) {
 		throw new Error('No triangle geometry found in GLB model.');
+	}
+
+	if (optimize) {
+		triangles = removeDegenerates(triangles);
+		triangles = autoOrient(triangles);
+		triangles = translateToFloor(triangles);
 	}
 
 	return writeBinaryStl(triangles);
