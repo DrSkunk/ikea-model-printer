@@ -4,6 +4,8 @@ import {
 	KHRDracoMeshCompression,
 	KHRTextureBasisu
 } from '@gltf-transform/extensions';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import draco3d from 'draco3dgltf';
 
 const MODE_TRIANGLES = 4;
@@ -11,7 +13,32 @@ const MODE_TRIANGLE_STRIP = 5;
 const MODE_TRIANGLE_FAN = 6;
 const MM_PER_METER = 1000;
 
-const decoderModulePromise = draco3d.createDecoderModule().catch(() => null);
+let decoderModulePromise: Promise<unknown | null> | null = null;
+
+async function loadDracoDecoderModule(): Promise<unknown | null> {
+	if (!decoderModulePromise) {
+		decoderModulePromise = (async () => {
+			try {
+				// Resolve and load the wasm explicitly so serverless bundlers include it.
+				const require = createRequire(import.meta.url);
+				const wasmPath = require.resolve('draco3dgltf/draco_decoder_gltf.wasm');
+				const wasmBinary = await readFile(wasmPath);
+				return await draco3d.createDecoderModule({
+					wasmBinary: new Uint8Array(
+						wasmBinary.buffer,
+						wasmBinary.byteOffset,
+						wasmBinary.byteLength
+					),
+					locateFile: (file) => (file === 'draco_decoder_gltf.wasm' ? wasmPath : file)
+				});
+			} catch {
+				return null;
+			}
+		})();
+	}
+
+	return decoderModulePromise;
+}
 
 type Mat4 = [
 	number,
@@ -417,7 +444,7 @@ function getGlbExtensionsRequired(glbBytes: Uint8Array): string[] {
 }
 
 async function buildIo(): Promise<NodeIO> {
-	const decoderModule = await decoderModulePromise;
+	const decoderModule = await loadDracoDecoderModule();
 	const io = new NodeIO().registerExtensions(
 		decoderModule
 			? [KHRDracoMeshCompression, EXTTextureWebP, KHRTextureBasisu]
@@ -438,7 +465,7 @@ export async function convertGlbToStl(
 ): Promise<Uint8Array> {
 	const { optimize = false } = options;
 
-	const decoderModule = await decoderModulePromise;
+	const decoderModule = await loadDracoDecoderModule();
 	if (!decoderModule) {
 		const requiredExts = getGlbExtensionsRequired(glbBytes);
 		if (requiredExts.includes('KHR_draco_mesh_compression')) {
